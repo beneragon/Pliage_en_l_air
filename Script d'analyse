@@ -179,7 +179,7 @@ def main_dic_analysis(image_folder):
             # Note : Selon la géométrie, l'angle calculé peut être l'angle intérieur ou extérieur.
             # Souvent en pliage, on mesure l'angle intérieur (qui part de 180° à plat vers 90°).
             # On peut mettre 180 - raw_angle pour invserser
-            angle_final = raw_angle 
+            angle_final = 180 - raw_angle 
 
             # Ajout au tableau de résultats
             results_table.append((filename, angle_final))
