@@ -13,4 +13,5 @@ Installation :
 Installez les dépendances :bash pip install opencv-python numpy
 
 Dans le code, modifiez le chemin du folder ligne 218 : main_dic_analysis(r'image_folder')
+
 Lancez le script
