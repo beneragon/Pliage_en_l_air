@@ -1,0 +1,219 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Feb  4 08:37:10 2026
+
+@author: pacioseb
+"""
+
+import cv2                  # Bibliothèque de vision par ordinateur (OpenCV)
+import numpy as np          # Bibliothèque de calcul mathématique (vecteurs, matrices)
+import glob                 # Pour chercher des fichiers dans un dossier
+import os                   # Pour gérer les chemins de fichiers (Windows/Linux)
+import re                   # "Regular Expressions" : pour le tri intelligent des chiffres dans les noms
+
+# =============================================================================
+# FONCTIONS UTILITAIRES
+# =============================================================================
+
+def natural_sort_key(filename):
+    """
+    Fonction de tri pour que l'ordinateur comprenne que 'image_2' vient avant 'image_10'.
+    Elle découpe le nom du fichier en morceaux de texte et de nombres.
+    """
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', filename)]
+
+def calculate_angle(v1, v2):
+    """
+    Calcule l'angle mathématique (en degrés) entre deux vecteurs directeurs.
+    v1 et v2 sont des vecteurs [x, y].
+    """
+    # Produit scalaire (dot product) : c'est la "projection" d'un vecteur sur l'autre
+    dot_product = np.dot(v1, v2)
+    
+    # On normalise les vecteurs (on les ramène à une longueur de 1) pour isoler l'angle
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+    
+    # Cosinus de l'angle = (u. v) / (|u| * |v|)
+    cos_angle = dot_product / (norm_v1 * norm_v2)
+    
+    # Sécurité : on s'assure que la valeur reste entre -1 et 1 (sinon arccos plante)
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+    
+    # On convertit le cosinus en angle (radians -> degrés)
+    angle_deg = np.degrees(np.arccos(cos_angle))
+    return angle_deg
+
+# =============================================================================
+# CŒUR DU PROGRAMME
+# =============================================================================
+
+def main_dic_analysis(image_folder):
+    print("--- Démarrage de l'analyse DIC ---")
+
+    # 1. CHARGEMENT ET TRI DES IMAGES
+    # ---------------------------------------------------------
+    # On définit le motif de recherche (ex: tous les fichiers.BMP qui commencent par "exo...")
+    # on peut mettre "*" par "exo542MU3_101931*.BMP" si besoin
+    search_pattern = os.path.join(image_folder, "exo542MU3_101931*.BMP")
+    
+    # On récupère la liste brute des fichiers
+    files_unsorted = glob.glob(search_pattern)
+    
+    if not files_unsorted:
+        print(f"ERREUR : Aucune image trouvée dans {image_folder}")
+        return
+
+    # On trie la liste proprement (1, 2,..., 10, 100)
+    image_files = sorted(files_unsorted, key=natural_sort_key)
+    total_images = len(image_files)
+    print(f"Succès : {total_images} images chargées et triées.")
+
+    # 2. INITIALISATION (PREMIÈRE IMAGE)
+    # ---------------------------------------------------------
+    # On lit la première image (t=0) pour que l'utilisateur place ses zones
+    frame_ref = cv2.imread(image_files[0])
+    
+    if frame_ref is None:
+        print("ERREUR CRITIQUE : Impossible de lire la première image.")
+        return
+
+    # Conversion en niveaux de gris (le DIC ne travaille pas en couleur)
+    gray_ref = cv2.cvtColor(frame_ref, cv2.COLOR_BGR2GRAY)
+
+    print("\n--- ACTION REQUISE ---")
+    print("Une fenêtre va s'ouvrir.")
+    print("1. Dessinez un rectangle sur l'AILE GAUCHE (évitez le pli central).")
+    print("2. Appuyez sur ENTRÉE ou ESPACE pour valider.")
+    r_left = cv2.selectROI("Selection Aile Gauche", frame_ref, fromCenter=False)
+    
+    print("3. Dessinez un rectangle sur l'AILE DROITE.")
+    print("4. Appuyez sur ENTRÉE ou ESPACE pour valider.")
+    r_right = cv2.selectROI("Selection Aile Droite", frame_ref, fromCenter=False)
+    
+    cv2.destroyAllWindows() # On ferme les fenêtres de sélection
+
+    # 3. DÉTECTION DES POINTS D'INTÉRÊT (TEXTURE)
+    # ---------------------------------------------------------
+    # On crée des masques (images noires) pour dire à l'algo où chercher les points
+    mask_left = np.zeros_like(gray_ref)
+    mask_right = np.zeros_like(gray_ref)
+    
+    # On "allume" (blanc) les zones sélectionnées dans les masques
+    # r_left contient [x, y, largeur, hauteur]
+    # On utilise : [ y : y+h , x : x+w ]
+    # r=x, r[1]=y, r[2]=largeur, r[3]=hauteur
+    mask_left[int(r_left[2]):int(r_left[2]+r_left[3]), int(r_left[0]):int(r_left[0]+r_left[1])] = 255
+    mask_right[int(r_right[2]):int(r_right[2]+r_right[3]), int(r_right[0]):int(r_right[0]+r_right[1])] = 255
+
+    # Paramètres pour trouver les "bons points" (coins, contrastes forts)
+    feature_params = dict(maxCorners=500, qualityLevel=0.01, minDistance=5, blockSize=7)
+    
+    # L'ordinateur cherche les points à suivre
+    p0_left = cv2.goodFeaturesToTrack(gray_ref, mask=mask_left, **feature_params)
+    p0_right = cv2.goodFeaturesToTrack(gray_ref, mask=mask_right, **feature_params)
+
+    if p0_left is None or p0_right is None:
+        print("ERREUR : Pas assez de texture trouvée. Impossible de suivre le mouvement.")
+        return
+    
+    print(f"Points trouvés -> Gauche: {len(p0_left)}, Droite: {len(p0_right)}")
+
+    # 4. BOUCLE DE TRAITEMENT (FRAME BY FRAME)
+    # ---------------------------------------------------------
+    # Paramètres de l'algo Lucas-Kanade (taille de fenêtre de recherche)
+    lk_params = dict(winSize=(21, 21), maxLevel=3,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
+
+    # Variables pour stocker l'état précédent (pour le suivi incrémental)
+    p_current_left = p0_left
+    p_current_right = p0_right
+    gray_prev = gray_ref.copy()
+    
+    # Liste pour stocker les résultats : [ (NomImage, Angle),... ]
+    results_table = []
+
+    print("\n--- Début du Traitement ---")
+
+    # On boucle sur toutes les images à partir de la 2ème (index 1)
+    for i in range(1, total_images):
+        # Nom du fichier actuel
+        filename = os.path.basename(image_files[i])
+        
+        # Lecture et conversion N&B
+        frame = cv2.imread(image_files[i])
+        gray_curr = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # --- A. CALCUL DU DÉPLACEMENT (OPTICAL FLOW) ---
+        # On demande : "Où sont passés les points p_current dans la nouvelle image?"
+        # p_new_left : nouvelles positions
+        # st_l : status (1 = trouvé, 0 = perdu)
+        p_new_left, st_l, err_l = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_left, None, **lk_params)
+        p_new_right, st_r, err_r = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_right, None, **lk_params)
+
+        # Si le suivi échoue complètement, on arrête
+        if p_new_left is None or p_new_right is None:
+            print(f"Perte de suivi critique à l'image {filename}")
+            break
+
+        # On ne garde que les points qui ont été bien suivis (status == 1)
+        good_left = p_new_left[st_l == 1]
+        good_right = p_new_right[st_r == 1]
+
+        # --- B. ANALYSE GÉOMÉTRIQUE (FIT LINE) ---
+        angle_final = 0.0
+        
+        # Il faut au moins quelques points pour tracer une ligne fiable
+        if len(good_left) > 5 and len(good_right) > 5:
+            # On ajuste une droite mathématique au travers du nuage de points
+            # vx, vy sont les composantes du vecteur directeur de la droite
+            [vx_l, vy_l, x_l, y_l] = cv2.fitLine(good_left, cv2.DIST_L2, 0, 0.01, 0.01)
+            [vx_r, vy_r, x_r, y_r] = cv2.fitLine(good_right, cv2.DIST_L2, 0, 0.01, 0.01)
+
+            # On crée les vecteurs numpy
+            vec_l = np.array([vx_l, vy_l]).flatten()
+            vec_r = np.array([vx_r, vy_r]).flatten()
+            
+            # Calcul de l'angle
+            raw_angle = calculate_angle(vec_l, vec_r)
+            
+            # Note : Selon la géométrie, l'angle calculé peut être l'angle intérieur ou extérieur.
+            # Souvent en pliage, on mesure l'angle intérieur (qui part de 180° à plat vers 90°).
+            # Ajustez cette formule si vos résultats sont "bizarres" (ex: 180 - raw_angle)
+            angle_final = raw_angle 
+
+            # Ajout au tableau de résultats
+            results_table.append((filename, angle_final))
+            
+            # --- C. MESSAGE DE PROGRESSION ---
+            print(f"> Image {i+1}/{total_images} traitée : {filename} | Angle calculé = {angle_final:.2f}°")
+
+        else:
+            print(f"> Image {i+1}/{total_images} : Pas assez de points pour calculer l'angle.")
+            results_table.append((filename, float('nan')))
+
+        # --- D. MISE À JOUR POUR LA SUITE ---
+        # Les points actuels deviennent les "anciens" pour la prochaine image
+        p_current_left = good_left.reshape(-1, 1, 2)
+        p_current_right = good_right.reshape(-1, 1, 2)
+        gray_prev = gray_curr.copy()
+
+    # 5. AFFICHAGE DU TABLEAU FINAL
+    # ---------------------------------------------------------
+    print("\n" + "="*60)
+    print(f"{'IMAGE':<40} | {'ANGLE (°)':<15}")
+    print("="*60)
+    
+    for row in results_table:
+        name = row[0]   # on prend juste le nom
+        ang = row[1]    # on prend l'angle (index 1)
+        
+        # Affichage formaté (aligné à gauche)
+        print(f"{name:<40} | {ang:.2f}")
+    
+    print("="*60)
+    print("Analyse terminée.")
+
+# LANCEZ LE CODE ICI EN MODIFIANT LE CHEMIN
+main_dic_analysis(r'G:\DP800\-5mm\1')
+# main_dic_analysis('.') # Utiliser '.' si les images sont dans le même dossier que le script
