@@ -54,7 +54,7 @@ def main_dic_analysis(image_folder):
     # 1. CHARGEMENT ET TRI DES IMAGES
     # ---------------------------------------------------------
     # On définit le motif de recherche (ex: tous les fichiers.BMP qui commencent par "exo...")
-    # on peut mettre "*" par "exo542MU3_101931*.BMP" si besoin
+    # On peut mettre "*" par "exo542MU3_101931*.BMP" si besoin
     search_pattern = os.path.join(image_folder, "exo542MU3_101931*.BMP")
     
     # On récupère la liste brute des fichiers
@@ -145,7 +145,6 @@ def main_dic_analysis(image_folder):
         gray_curr = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # --- A. CALCUL DU DÉPLACEMENT (OPTICAL FLOW) ---
-        # On demande : "Où sont passés les points p_current dans la nouvelle image?"
         # p_new_left : nouvelles positions
         # st_l : status (1 = trouvé, 0 = perdu)
         p_new_left, st_l, err_l = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_left, None, **lk_params)
@@ -179,7 +178,7 @@ def main_dic_analysis(image_folder):
             
             # Note : Selon la géométrie, l'angle calculé peut être l'angle intérieur ou extérieur.
             # Souvent en pliage, on mesure l'angle intérieur (qui part de 180° à plat vers 90°).
-            # Ajustez cette formule si vos résultats sont "bizarres" (ex: 180 - raw_angle)
+            # On peut mettre 180 - raw_angle pour invserser
             angle_final = raw_angle 
 
             # Ajout au tableau de résultats
