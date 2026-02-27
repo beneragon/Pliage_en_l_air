@@ -23,14 +23,14 @@ Suivi du pliage en l'air par corrélation d'images (DIC).
 
 ## Contexte
 
-Le pliage de tôles est un procédé fondamental utilisé dans de nombreuses domaines : automobile, aéronautique, tôlerie industrie de précision. Parmi eux, le pliage en l'air est l'une des méthodes les plus utilisées en raison de sa rapidité de mise en oeuvre, de sa compatibilité avec une large gamme de matériaux et d'épaisseurs et de sa capacité à produire une large gamme d'angles avec un même jeu poinçon-matrice.
+Le pliage de tôles est un procédé fondamental utilisé dans de nombreusx domaines : automobile, aéronautique, tôlerie, industrie de précision. Parmi eux, le pliage en l'air est l'une des méthodes les plus utilisées en raison de sa rapidité de mise en oeuvre, de sa compatibilité avec une large gamme de matériaux et d'épaisseurs et de sa capacité à produire une large gamme d'angles avec un même jeu poinçon-matrice.
 
-Lors du pliage, un poinçon applique un effort sur la tôle positionnée sur une matrice en V : elle déforme la pièce jusqu'à obtenir l'angle de liage souhaité. La géométrie finale dépend :
+Lors du pliage, un poinçon applique un effort sur la tôle positionnée sur une matrice en V : elle déforme la pièce jusqu'à obtenir l'angle de pliage souhaité. La géométrie finale dépend :
 - de la course du poinçon,
 - de l'ouverture de la matrice en V,
 - des propriétés mécaniques du matériau.
 
-Cependant, l'un des principaux problèmes lié au pliage en l'air est le retour élastique (appelé springback). Lors du retrait du poinçon, une partie de la déformation élastique accumulée pendant la mise en forme est relâchée, ce qui entraîne une variation entre langle final obtenu et l'angle sous charge souhaité. Il devient alors essentiel de déterminer ce springback afin de limiter les coûts et les temps de cycle.
+Cependant, l'un des principaux problèmes lié au pliage en l'air est le retour élastique (appelé springback). Lors du retrait du poinçon, une partie de la déformation élastique accumulée pendant la mise en forme est relâchée, ce qui entraîne une variation entre l'angle final obtenu et l'angle sous charge souhaité. Il devient alors essentiel de déterminer ce springback afin de limiter les coûts et les temps de cycle.
 
 ## Objectif du projet
 
