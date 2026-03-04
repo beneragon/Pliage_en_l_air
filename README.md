@@ -23,7 +23,7 @@ Suivi du pliage en l'air par corrélation d'images (DIC).
 
 ## Contexte
 
-Le pliage de tôles est un procédé fondamental utilisé dans de nombreusx domaines : automobile, aéronautique, tôlerie, industrie de précision. Parmi eux, le pliage en l'air est l'une des méthodes les plus utilisées en raison de sa rapidité de mise en oeuvre, de sa compatibilité avec une large gamme de matériaux et d'épaisseurs et de sa capacité à produire une large gamme d'angles avec un même jeu poinçon-matrice.
+Le pliage de tôles est un procédé fondamental utilisé dans de nombreux domaines : automobile, aéronautique, tôlerie, industrie de précision. Parmi eux, le pliage en l'air est l'une des méthodes les plus utilisées en raison de sa rapidité de mise en oeuvre, de sa compatibilité avec une large gamme de matériaux et d'épaisseurs et de sa capacité à produire une large gamme d'angles avec un même jeu poinçon-matrice.
 
 Lors du pliage, un poinçon applique un effort sur la tôle positionnée sur une matrice en V : elle déforme la pièce jusqu'à obtenir l'angle de pliage souhaité. La géométrie finale dépend :
 - de la course du poinçon,
