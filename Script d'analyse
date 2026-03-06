@@ -1,45 +1,58 @@
 # -*- coding: utf-8 -*-
 """
 Analyse DIC pour mesure d'angle de pliage
-- Segments collés au bord supérieur de la plaque
-- Étape de calibration initiale automatique à 180°
-- Création et sauvegarde de la courbe d'évolution
+- Lignes robustes sur le bord supérieur absolu
+- Calibration à 180°
+- Calcul du Retour Élastique (Springback)
+- OPTIMISÉ POUR LA VITESSE (Génération vidéo AVI)
 """
 
-import cv2                  
-import numpy as np          
-import glob                 
-import os                   
-import re                   
-import matplotlib.pyplot as plt
+import cv2                  # OpenCV : La bibliothèque reine pour l'analyse d'images
+import numpy as np          # NumPy : Pour faire des calculs mathématiques rapides (matrices, vecteurs)
+import glob                 # Glob : Pour lister facilement tous les fichiers d'un dossier
+import os                   # OS : Pour manipuler les chemins de fichiers Windows/Mac
+import re                   # Regex : Pour découper et analyser le texte (utilisé pour le tri)
+import time                 # Time : Pour mesurer la vitesse d'exécution
+import matplotlib.pyplot as plt  # Matplotlib : Pour tracer le graphique final
 
 # =============================================================================
-# FONCTIONS UTILITAIRES
+# 1. FONCTIONS OUTILS (Les formules mathématiques)
 # =============================================================================
 
 def natural_sort_key(filename):
-    """ Tri naturel pour que 'image_2' vienne avant 'image_10'. """
+    """ 
+    Astuce pour trier les fichiers comme un humain. 
+    Sans ça, l'ordinateur classe 'image_10' AVANT 'image_2'.
+    Cette fonction coupe le texte et lit les vrais nombres.
+    """
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', filename)]
 
 def calculate_angle(v1, v2):
-    """ Calcule l'angle mathématique (en degrés) entre deux vecteurs directeurs. """
+    """ 
+    Calcule l'angle mathématique (en degrés) entre deux vecteurs directeurs. 
+    Utilise la formule du produit scalaire : cos(theta) = (v1 scalaire v2) / (norme(v1)*norme(v2))
+    """
     dot_product = np.dot(v1, v2)
     norm_v1 = np.linalg.norm(v1)
     norm_v2 = np.linalg.norm(v2)
     
+    # Division avec protection (np.clip) pour éviter que l'ordinateur ne plante
+    # si le résultat dépasse très légèrement 1.0 ou -1.0 à cause des arrondis
     cos_angle = dot_product / (norm_v1 * norm_v2)
     cos_angle = np.clip(cos_angle, -1.0, 1.0)
     
+    # Arccos donne l'angle en radians, on le convertit en degrés
     return np.degrees(np.arccos(cos_angle))
 
 # =============================================================================
-# CŒUR DU PROGRAMME
+# 2. CŒUR DU PROGRAMME
 # =============================================================================
 
 def main_dic_analysis(image_folder):
-    print("--- Démarrage de l'analyse DIC ---")
+    print("--- Démarrage de l'analyse DIC (Mode Haute Vitesse) ---")
+    start_total_time = time.time()
 
-    # Chargement de toutes les images
+    # A. Chargement de toutes les images
     search_pattern = os.path.join(image_folder, "exo542MU3_101931*.BMP")
     files_unsorted = glob.glob(search_pattern)
     
@@ -47,128 +60,107 @@ def main_dic_analysis(image_folder):
         print(f"ERREUR : Aucune image trouvée dans {image_folder}")
         return
 
-    # On trie nos images
+    # On applique notre fonction de tri naturel
     image_files = sorted(files_unsorted, key=natural_sort_key)
     total_images = len(image_files)
     print(f"Succès : {total_images} images chargées et triées.")
 
-    # Traitement de la première image
+    # B. Traitement de la PREMIÈRE image (t=0)
     frame_ref = cv2.imread(image_files[ 0 ])
-    
     if frame_ref is None:
-        print("ERREUR CRITIQUE : Impossible de lire la première image.")
         return
 
-    # On passe en noir et blanc car la détection de mouvement (Optical flow) n'a besoin que des contrastes 
+    # On passe en Noir et Blanc car la détection de mouvement (Optical Flow) n'a besoin que des contrastes
     gray_ref = cv2.cvtColor(frame_ref, cv2.COLOR_BGR2GRAY)
 
     print("\n--- ACTION REQUISE ---")
-    print("1. Dessinez un rectangle sur l'AILE GAUCHE (évitez le pli central).")
+    print("1. Dessinez un rectangle sur l'AILE GAUCHE (évitez le pli central) et tapez ESPACE.")
     r_left = cv2.selectROI("Selection Aile Gauche", frame_ref, fromCenter=False)
     
-    print("2. Dessinez un rectangle sur l'AILE DROITE.")
+    print("2. Dessinez un rectangle sur l'AILE DROITE et tapez ESPACE.")
     r_right = cv2.selectROI("Selection Aile Droite", frame_ref, fromCenter=False)
     
+    # On ferme toutes les fenêtres pour libérer le processeur
     cv2.destroyAllWindows()
+    print("Fenêtres fermées. L'ordinateur calcule à vitesse maximale...")
 
-    # On recherche les points de textures (les mouchetis) et on crée des masques (images noires)
+    # C. Recherche des points de texture à suivre (Le "mouchetis")
     mask_left = np.zeros_like(gray_ref)
     mask_right = np.zeros_like(gray_ref)
     
-    # On met en blanc uniquement les rectangles dessinés
-    # Indices : [ 0 ]=X, [ 1 ]=Y, [ 2 ]=Largeur, [ 3 ]=Hauteur
     mask_left[int(r_left[ 1 ]):int(r_left[ 1 ]+r_left[ 3 ]), int(r_left[ 0 ]):int(r_left[ 0 ]+r_left[ 2 ])] = 255
     mask_right[int(r_right[ 1 ]):int(r_right[ 1 ]+r_right[ 3 ]), int(r_right[ 0 ]):int(r_right[ 0 ]+r_right[ 2 ])] = 255
 
-    # L'algorithme "Shi-Tomasi" va trouver les 500 meilleurs points (coins, taches) dans ces zones
     feature_params = dict(maxCorners=500, qualityLevel=0.01, minDistance=5, blockSize=7)
-    
     p0_left = cv2.goodFeaturesToTrack(gray_ref, mask=mask_left, **feature_params)
     p0_right = cv2.goodFeaturesToTrack(gray_ref, mask=mask_right, **feature_params)
 
-    if p0_left is None or p0_right is None:
-        print("ERREUR : Pas assez de texture trouvée.")
-        return
-    
-    print(f"Points trouvés -> Gauche: {len(p0_left)}, Droite: {len(p0_right)}")
+    # Paramètres allégés de l'algorithme "Lucas-Kanade" pour gagner en vitesse (maxLevel=2)
+    lk_params = dict(winSize=(21, 21), maxLevel=2,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
-    # Paramètres de l'algorithme "Lucas-Kanade" qui va pister ces points d'image en image
-    lk_params = dict(winSize=(21, 21), maxLevel=3,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
-
-    # Variables de mémoire pour la boucle (L'image actuelle deviendra l'image précédente)
     p_current_left = p0_left
     p_current_right = p0_right
     gray_prev = gray_ref.copy()
     
     results_table = list()
-
-    # Variables pour mémoriser la correction de 180° au premier tour
+    
     calibration_done = False
-    theta_correction = 0.0  # Angle de correction à appliquer au segment vert
+    theta_correction = 0.0
 
-    print("\n--- Début du Traitement et de la Sauvegarde ---")
+    print("\n--- Début du Traitement ---")
 
-    # On boucle sur toutes les images
+    # CREATION DE LA VIDÉO (.avi et XVID pour la compatibilité Windows)
+    height, width = frame_ref.shape[:2]
+    chemin_video = os.path.join(image_folder, "00_Resultat_Pliage.avi")
+    fourcc = cv2.VideoWriter_fourcc(*'XVID') 
+    video_out = cv2.VideoWriter(chemin_video, fourcc, 15.0, (width, height))
+    
+    # D. BOUCLE SUR TOUTES LES IMAGES (de la 2ème à la dernière)
     for i in range(1, total_images):
+        t_start_frame = time.time()
+        
         filename = os.path.basename(image_files[i])
         frame = cv2.imread(image_files[i])
         gray_curr = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # On demande : "Dans la nouvelle image, où se trouvent désormais les points qu'on suivait?"
+        # 1. LE SUIVI (OPTICAL FLOW)
         p_new_left, st_l, err_l = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_left, None, **lk_params)
         p_new_right, st_r, err_r = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_right, None, **lk_params)
 
-        if p_new_left is None or p_new_right is None:
-            print(f"Perte de suivi à l'image {filename}")
-            break
-
-        # On se débarasse des points perdus (reflets, hors-champ) et on ne garde que ceux avec status == 1
         good_left = p_new_left[st_l == 1]
         good_right = p_new_right[st_r == 1]
 
         angle_final = 0.0
         
-        # S'il reste assez de points pour tracer une droite
         if len(good_left) > 5 and len(good_right) > 5:
-            # 1. Ajustement mathématique robuste des droites
-            # cv2.DIST_HUBER ignore les points qui déraillent (contrairement aux moindres carrés L2)
+            
+            # 2. CALCUL DES LIGNES ROBUSTES
             [vx_l, vy_l, x_l, y_l] = cv2.fitLine(good_left, cv2.DIST_HUBER, 0, 0.01, 0.01)
             [vx_r, vy_r, x_r, y_r] = cv2.fitLine(good_right, cv2.DIST_HUBER, 0, 0.01, 0.01)
-            
-            # On extrait les valeurs des tableaux
+
             x_l, y_l = float(x_l[ 0 ]), float(y_l[ 0 ])
             x_r, y_r = float(x_r[ 0 ]), float(y_r[ 0 ])
             vx_l, vy_l = float(vx_l[ 0 ]), float(vy_l[ 0 ])
             vx_r, vy_r = float(vx_r[ 0 ]), float(vy_r[ 0 ])
 
-            # 2. Forcer l'orientation des vecteurs vers l'extérieur (Gauche pointe à gauche, Droite pointe à droite)
             if vx_l > 0: vx_l, vy_l = -vx_l, -vy_l
             if vx_r < 0: vx_r, vy_r = -vx_r, -vy_r
 
             vec_l = np.array([vx_l, vy_l])
             vec_r = np.array([vx_r, vy_r])
             
-            # =================================================================
-            # ÉTAPE DE VÉRIFICATION ET DE CALIBRATION (IMAGE 1 UNIQUEMENT)
-            # =================================================================
+            # 3. CALIBRATION 
             if not calibration_done:
                 angle_init = calculate_angle(vec_l, vec_r)
                 if abs(angle_init - 180.0) > 0.05:
-                    # On calcule de combien il faut tourner le vecteur gauche pour qu'il soit parfaitement opposé au vecteur droit (180°)
-                    # Si la tôle à plat n'est pas mesurée à 180°, on calcule l'erreur d'inclinaison (theta)
                     target_vec_l = -vec_r
                     dot = vec_l[ 0 ]*target_vec_l[ 0 ] + vec_l[ 1 ]*target_vec_l[ 1 ]
                     det = vec_l[ 0 ]*target_vec_l[ 1 ] - vec_l[ 1 ]*target_vec_l[ 0 ]
                     theta_correction = np.arctan2(det, dot)
-                    print(f"*** CALIBRATION : Angle initial {angle_init:.2f}°. Décalage du segment vert appliqué pour forcer à 180.00°. ***")
-                else:
-                    print(f"*** CALIBRATION : Angle initial {angle_init:.2f}° OK. Aucun décalage requis. ***")
                 calibration_done = True
-            # =================================================================
 
-            # 3. Application de la calibration au segment vert (pour toutes les images)
-            # On tourne virtuellement le segment gauche pour qu'il soit parfaitement calibré
+            # 4. APPLICATION DE LA CORRECTION
             c, s = np.cos(theta_correction), np.sin(theta_correction)
             vec_l_corr = np.array([
                 vec_l[ 0 ]*c - vec_l[ 1 ]*s,
@@ -176,21 +168,18 @@ def main_dic_analysis(image_folder):
             ])
             vx_l_corr, vy_l_corr = vec_l_corr[ 0 ], vec_l_corr[ 1 ]
 
-            # 4. Calcul de l'angle final réel
+            # 5. CALCUL DE L'ANGLE
             angle_final = calculate_angle(vec_l_corr, vec_r)
             results_table.append((filename, angle_final))
 
-            # 5. Décalage des segments pour être parfaitement alignés sur le bord supérieur absolu
-            # Aile droite
+            # 6. DÉCALAGE SUR LE BORD SUPÉRIEUR
             if abs(vx_r) > 1e-6:
                 m_r = vy_r / vx_r
                 c_right = good_right[:, 1] - m_r * good_right[:, 0]
-                # np.min garantit que la ligne s'accroche au pixel le plus haut (y minimum)
                 y_top_r = m_r * x_r + np.min(c_right) 
             else:
                 y_top_r = np.min(good_right[:, 1])
 
-            # Aile gauche (avec le vecteur corrigé)
             if abs(vx_l_corr) > 1e-6:
                 m_l = vy_l_corr / vx_l_corr
                 c_left = good_left[:, 1] - m_l * good_left[:, 0]
@@ -198,68 +187,50 @@ def main_dic_analysis(image_folder):
             else:
                 y_top_l = np.min(good_left[:, 1])
             
-            # --- DESSIN DES LIGNES SUR LE BORD SUPÉRIEUR ---
-            # On allonge les segments artificiellement (* 1000 pixels) pour qu'ils traversent l'écran
+            # 7. DESSIN SUR L'IMAGE
             pt1_g = (int(x_l - vx_l_corr*1000), int(y_top_l - vy_l_corr*1000))
             pt2_g = (int(x_l + vx_l_corr*1000), int(y_top_l + vy_l_corr*1000))
-            cv2.line(frame, pt1_g, pt2_g, (0, 255, 0), 2)
+            cv2.line(frame, pt1_g, pt2_g, (0, 255, 0), 2)  # Vert
             
             pt1_d = (int(x_r - vx_r*1000), int(y_top_r - vy_r*1000))
             pt2_d = (int(x_r + vx_r*1000), int(y_top_r + vy_r*1000))
-            cv2.line(frame, pt1_d, pt2_d, (0, 0, 255), 2)
+            cv2.line(frame, pt1_d, pt2_d, (0, 0, 255), 2)  # Rouge
             
-            # Affichage de l'angle
             texte = f"Angle: {angle_final:.2f} deg"
             cv2.putText(frame, texte, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 3)
             
-            # Sauvegarde de l'image
-            nom_sans_extension = os.path.splitext(filename)[ 0 ]
-            chemin_sauvegarde = os.path.join(image_folder, f"{nom_sans_extension}_resultat.png")
-            cv2.imwrite(chemin_sauvegarde, frame)
+            # AU LIEU D'ENREGISTRER DES PNG, ON AJOUTE L'IMAGE A LA VIDEO DIRECTEMENT (Très rapide)
+            video_out.write(frame)
 
-            print(f"> Image {i}/{total_images-1} : {filename} | Angle = {angle_final:.2f}°")
-
-            cv2.imshow("Analyse en cours", frame)
-            cv2.waitKey(10)
+            t_end_frame = time.time()
+            fps_actuel = 1.0 / (t_end_frame - t_start_frame)
+            print(f"> Image {i}/{total_images-1} traitée | Angle = {angle_final:.2f}° | Vitesse : {fps_actuel:.1f} i/s")
 
         else:
-            print(f"> Image {i}/{total_images-1} : Pas assez de points.")
-            results_table.append((filename, float('NaN')))
-        
-        # Mise à jour : les nouvelles positions deviennent les anciennes pour la prochaine boucle
+            print(f"> Image {i} : Erreur de suivi.")
+            results_table.append((filename, float('nan')))
+
         p_current_left = good_left.reshape(-1, 1, 2)
         p_current_right = good_right.reshape(-1, 1, 2)
         gray_prev = gray_curr.copy()
 
-    cv2.destroyAllWindows()
+    video_out.release() # Ferme et finalise le fichier vidéo
+    
+    total_time = time.time() - start_total_time
+    print(f"\n--- TERMINE! ---")
+    print(f"Temps total : {total_time:.2f} secondes (Moyenne : {total_time/total_images:.3f} s/image)")
+    print(f"La vidéo a été générée avec succès : {chemin_video}")
 
-    print("\n" + "="*60)
-    print(f"{'IMAGE':<40} | {'ANGLE (°)':<15}")
-    print("="*60)
-    for row in results_table:
-        print(f"{row[ 0 ]:<40} | {row[ 1 ]:.2f}")
-    print("="*60)
-
-    # =========================================================================
-    # CRÉATION DU GRAPHIQUE (COURBE D'ÉVOLUTION)
-    # =========================================================================
-  # On extrait uniquement les angles valides (en ignorant les erreurs 'NaN')
+    # =============================================================================
+    # 3. ANALYSE FINALE ET RÉSULTATS (RETOUR ÉLASTIQUE)
+    # =============================================================================
     angles_valides = [row[ 1 ] for row in results_table if not np.isnan(row[ 1 ])]
     
     if len(angles_valides) > 0:
-        # L'angle minimum correspond à l'enfoncement maximal du poinçon
         angle_min = min(angles_valides)
-        # L'angle final correspond à la dernière image (après remontée du poinçon)
         angle_final_reel = angles_valides[-1]
-        
-        # Le retour élastique est la différence d'ouverture de la tôle
         springback = angle_final_reel - angle_min
         
-        for row in results_table:
-            print(f"{row[ 0 ]:<40} | {row[ 1 ]:.2f}")
-        print("="*60)
-        
-        # Affichage des valeurs clés demandées
         print("\n=== BILAN MÉCANIQUE DU PLIAGE ===")
         print(f"Angle Minimum atteint (Sous charge) : {angle_min:.2f} °")
         print(f"Angle Final obtenu    (Au repos)    : {angle_final_reel:.2f} °")
@@ -267,25 +238,23 @@ def main_dic_analysis(image_folder):
         print("=================================\n")
 
         # =========================================================================
-        # CRÉATION DU GRAPHIQUE
+        # 4. CRÉATION DU GRAPHIQUE
         # =========================================================================
         numero_images = range(1, len(angles_valides) + 1)
         
         plt.figure(figsize=(10, 6))
         plt.plot(numero_images, angles_valides, '-o', color='b', label='Évolution de l\'angle', markersize=3)
         
-        # On ajoute un point rouge et un point vert pour montrer le Min et le Final
         index_min = angles_valides.index(angle_min) + 1
         plt.plot(index_min, angle_min, 'ro', markersize=8, label=f'Min: {angle_min:.2f}°')
         plt.plot(len(angles_valides), angle_final_reel, 'go', markersize=8, label=f'Final: {angle_final_reel:.2f}°')
         
-        # On ajoute une flèche et un texte pour montrer le Springback
         plt.annotate(f"Springback:\n+{springback:.2f}°", 
                      xy=(len(angles_valides), angle_final_reel), 
                      xytext=(len(angles_valides)-15, angle_final_reel+3),
                      arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=5))
 
-        plt.title("Évolution du pliage et Mesure du retour élastique", fontsize=14)
+        plt.title("Cinématique du pliage et Mesure du Retour Élastique", fontsize=14)
         plt.xlabel("Avancement (Numéro de l'image)", fontsize=12)
         plt.ylabel("Angle mesuré (°)", fontsize=12)
         plt.grid(True, linestyle='--', alpha=0.7)
@@ -293,7 +262,6 @@ def main_dic_analysis(image_folder):
         
         chemin_graphique = os.path.join(image_folder, "00_Courbe_Evolution_Pliage.png")
         plt.savefig(chemin_graphique, dpi=300, bbox_inches='tight')
-        print(f"Graphique sauvegardé sous : {chemin_graphique}")
         plt.show()
 
 # LANCEZ LE CODE ICI
