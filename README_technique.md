@@ -52,3 +52,61 @@ Elles doivent être placées sur des zones rigides de la tôle, et non sur la zo
 Une fois les zones sélectionnées, le programme détecte automatiquement des points de texture dans ces régions. Cette étape est assurée via la fonction `cv2.goodFeaturesToTrack()`.
 
 Ces points correspondent aux zones de l'image où il y a du contraste (speckle). Le speckle (texture) sert de repère visuel qui pourra être suivi dans les images suivantes.
+
+### 4. Suivi du mouvement des points 
+
+Le déplacement des points entre deux images est calculé grâce à l'algorithme de flux optique de Lucas Kanade, via la fonction `cv2.calcOpticalFlowPyrLK()`. Cet algorithme permet de retrouver la position des points dans l'image suivante.
+
+Si un point disparaît, alors il est automatiquement supprimé pour éviter les erreurs.
+
+### 5. Calcul de l'orientation des ailes
+
+A partir des points suivis, le programme calcule une droite moyenne représentant chaque aile de la tôle. Cette estimation est réalisée avec la fonction `cv2.fitLine()`.
+
+Cela permet d'obtenir l'orientation de chaque côté de la tôle.
+
+### 6. Calibration de l'angle initial
+
+La première image correspond à la tôle à plat, donc l'angle doit être de 180°. Pourtant, à cause du positionnement de la caméra ou de petits défauts d'alignement, ce n'est pas toujours exactement le cas.
+
+Le programme calcule donc automatiquement une correction angulaire qui permet de forcer l'angle initial à 180°. Cette correction est ensuite appliquée à toutes les images.
+
+### 7. Calcul de l'angle de pliage
+
+L'angle entre les deux ailes est calculé à partir des vecteurs directeurs des deux droites. Le calcul utilise la formule du produit scalaire entre deux vecteurs, et on obtient ainsi l'angle de pliage pour chaque image de la séquence.
+
+### 8. Génération de la vidéo
+
+Pour visualiser les résultats, le programme génère une vidéo du pliage analysé.
+
+Sur chaque image :
+- les droites représentant les ailes sont tracées,
+- l'angle mesuré est affiché.
+
+Les images sont directement enregistrées dans une vidéo afin d'augmenter la vitesse de traitement, tout en permettant une vérification de la bonne exécution du code après sa réalisation.
+
+### 9. Calcul du retour élastique
+
+Une fois toutes les images analysées, le programme calcule le retour élastique.
+
+Deux valeurs sont identifiées :
+- l'angle minimum, qui correspond au moment où le poinçon est enfoncé au maximum,
+- l'angle final, mesuré lorsque le poinçon est retiré.
+
+Le retour élastique est alors calculé par : `springback = angle_final - angle_min`
+
+### 10. Génération du graphique
+
+Le programme trace enfin un graphique montrant l'évolution de l'angle de pliage au cours du temps.
+
+Ce graphique permet de visualiser :
+- la phase de pliage,
+- l'angle minimum atteint,
+- la phase de relâchement,
+- le retour élastique.
+
+Le graphique est sauvegardé automatiquement dans le dossier des images.
+
+## Comment utiliser le programme
+
+//
