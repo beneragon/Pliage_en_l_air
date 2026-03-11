@@ -1,6 +1,6 @@
 # PROJ901 - Explication du code
 
-Explication du code de l'analyse du pliage en l'air par DIC.
+Explication du code de l'analyse du pliage en l'air par corrélation d'images numériques (DIC).
 
 ## Objectif du programme
 
@@ -109,4 +109,43 @@ Le graphique est sauvegardé automatiquement dans le dossier des images.
 
 ## Comment utiliser le programme
 
-//
+### 1. Installer les bibliothèques nécessaires
+
+```
+pip install opencv-python numpy matplotlib
+```
+
+### 2. Modifier le chemin du dossier d'images
+
+A la fin du script, il faut indiquer le chemin du dossier contenant les images :
+```
+main_dic_analysis(r'D:\DP600\-5mm\1')
+```
+
+### 3. Sélectionner les zones d'analyse
+
+Une fois le programme dans python exécuté, il faut sur la première image :
+1. sélectionner l'aile gauche,
+2. sélectionner l'aile droite.
+
+### 4. Lancer l'analyse
+
+Après avoir appuyé sur la touche `entrée`, le programme va :
+- analyser toutes les images,
+- générer la vidéo,
+- calculer le retour élastique,
+- tracer le graphique final.
+
+## Fichiers générés 
+
+A la fin du programme, plusieurs fichiers sont créés automatiquement :
+
+**Vidéo du suivi du pliage**
+```
+00_Resultat_Pliage.avi
+```
+
+**Graphique de l'évolution de l'angle**
+```
+00_Courbe_Evolution_Pliage.png
+```
