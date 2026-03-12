@@ -1,0 +1,275 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Mar  9 08:27:09 2026
+
+@author: benja
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Analyse DIC Temps Réel (Webcam / Caméra)
+- Suivi du pliage en direct
+- Lignes robustes et calibration
+- Calcul du Retour Élastique à la fin de l'essai
+"""
+
+import cv2
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+
+# =============================================================================
+# 1. FONCTION DE CALCUL D'ANGLE
+# =============================================================================
+def calculate_angle(v1, v2):
+    dot_product = np.dot(v1, v2)
+    norm_v1 = np.linalg.norm(v1)
+    norm_v2 = np.linalg.norm(v2)
+    cos_angle = dot_product / (norm_v1 * norm_v2)
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+    return np.degrees(np.arccos(cos_angle))
+
+# =============================================================================
+# 2. CŒUR DU PROGRAMME TEMPS RÉEL
+# =============================================================================
+def main_dic_webcam(camera_id=0):
+    print("--- Démarrage de la Caméra ---")
+    
+    # Connexion à la caméra (0 = webcam par défaut, 1 = caméra USB externe, etc.)
+    cap = cv2.VideoCapture(camera_id)
+    
+    if not cap.isOpened():
+        print(f"ERREUR : Impossible d'ouvrir la caméra {camera_id}")
+        return
+
+    # A. PHASE D'ALIGNEMENT
+    print("Affichage en direct... Placez votre tôle.")
+    print("Appuyez sur la touche ESPACE pour figer l'image de référence.")
+    
+    frame_ref = None
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Erreur de lecture du flux vidéo.")
+            return
+            
+        cv2.imshow("Alignement de la piece (Espace pour valider)", frame)
+        
+        # Si on appuie sur Espace (code 32), on garde cette image comme référence
+        if cv2.waitKey(1) == 32: 
+            frame_ref = frame.copy()
+            break
+            
+    cv2.destroyWindow("Alignement de la piece (Espace pour valider)")
+
+    # B. SÉLECTION DES ZONES (Sur l'image figée)
+    gray_ref = cv2.cvtColor(frame_ref, cv2.COLOR_BGR2GRAY)
+
+    print("\n--- ACTION REQUISE ---")
+    print("1. Dessinez un rectangle sur l'AILE GAUCHE et tapez ESPACE.")
+    r_left = cv2.selectROI("Selection Aile Gauche", frame_ref, fromCenter=False)
+    
+    print("2. Dessinez un rectangle sur l'AILE DROITE et tapez ESPACE.")
+    r_right = cv2.selectROI("Selection Aile Droite", frame_ref, fromCenter=False)
+    cv2.destroyAllWindows()
+
+    # C. INITIALISATION DU SUIVI
+    mask_left = np.zeros_like(gray_ref)
+    mask_right = np.zeros_like(gray_ref)
+    
+    mask_left[int(r_left[ 1 ]):int(r_left[ 1 ]+r_left[ 3 ]), int(r_left[ 0 ]):int(r_left[ 0 ]+r_left[ 2 ])] = 255
+    mask_right[int(r_right[ 1 ]):int(r_right[ 1 ]+r_right[ 3 ]), int(r_right[ 0 ]):int(r_right[ 0 ]+r_right[ 2 ])] = 255
+
+    feature_params = dict(maxCorners=500, qualityLevel=0.01, minDistance=5, blockSize=7)
+    p0_left = cv2.goodFeaturesToTrack(gray_ref, mask=mask_left, **feature_params)
+    p0_right = cv2.goodFeaturesToTrack(gray_ref, mask=mask_right, **feature_params)
+
+    if p0_left is None or p0_right is None:
+        print("ERREUR : Pas assez de texture trouvée.")
+        cap.release()
+        return
+
+    lk_params = dict(winSize=(21, 21), maxLevel=2,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    p_current_left = p0_left
+    p_current_right = p0_right
+    gray_prev = gray_ref.copy()
+    
+    results_table = list()
+    
+    # Variables pour l'angle absolu
+    [vx_l0, vy_l0, _, _] = cv2.fitLine(p0_left, cv2.DIST_HUBER, 0, 0.01, 0.01)
+    [vx_r0, vy_r0, _, _] = cv2.fitLine(p0_right, cv2.DIST_HUBER, 0, 0.01, 0.01)
+    vx_l0, vy_l0 = float(vx_l0[ 0 ]), float(vy_l0[ 0 ])
+    vx_r0, vy_r0 = float(vx_r0[ 0 ]), float(vy_r0[ 0 ])
+    
+    if vx_l0 > 0: vx_l0, vy_l0 = -vx_l0, -vy_l0
+    if vx_r0 < 0: vx_r0, vy_r0 = -vx_r0, -vy_r0
+    
+    angle_l_current = np.arctan2(vy_l0, vx_l0)
+    angle_r_current = np.arctan2(vy_r0, vx_r0)
+
+    vec_l_init = np.array([np.cos(angle_l_current), np.sin(angle_l_current)])
+    vec_r_init = np.array([np.cos(angle_r_current), np.sin(angle_r_current)])
+    
+    calibration_done = False
+    theta_correction = 0.0
+
+    # Création du fichier vidéo de l'essai
+    height, width = frame_ref.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+    video_out = cv2.VideoWriter("Essai_Pliage_Live2.mp4", fourcc, 30.0, (width, height))
+
+    print("\n--- ANALYSE EN DIRECT EN COURS ---")
+    print(">>> Appuyez sur la touche 'q' pour arrêter l'essai et voir les résultats.")
+
+    frame_count = 0
+
+    # D. BOUCLE INFINIE (Jusqu'à ce qu'on appuie sur 'q')
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        frame_count += 1
+        t_start = time.time()
+        gray_curr = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        p_new_left, st_l, err_l = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_left, None, **lk_params)
+        p_new_right, st_r, err_r = cv2.calcOpticalFlowPyrLK(gray_prev, gray_curr, p_current_right, None, **lk_params)
+
+        good_curr_l = p_current_left[st_l == 1]
+        good_new_l = p_new_left[st_l == 1]
+        good_curr_r = p_current_right[st_r == 1]
+        good_new_r = p_new_right[st_r == 1]
+
+        if len(good_new_l) > 5 and len(good_new_r) > 5:
+            
+            # Affine Transform
+            M_l, _ = cv2.estimateAffinePartial2D(good_curr_l, good_new_l)
+            M_r, _ = cv2.estimateAffinePartial2D(good_curr_r, good_new_r)
+
+            if M_l is not None:
+                angle_l_current += np.arctan2(M_l[ 1, 0 ], M_l[ 0, 0 ])
+            if M_r is not None:
+                angle_r_current += np.arctan2(M_r[ 1, 0 ], M_r[ 0, 0 ])
+
+            vx_l, vy_l = np.cos(angle_l_current), np.sin(angle_l_current)
+            vx_r, vy_r = np.cos(angle_r_current), np.sin(angle_r_current)
+
+            vec_l = np.array([vx_l, vy_l])
+            vec_r = np.array([vx_r, vy_r])
+            
+            # Calibration Initiale
+            if not calibration_done:
+                angle_init = calculate_angle(vec_l, vec_r)
+                if abs(angle_init - 180.0) > 0.05:
+                    target_vec_l = -vec_r
+                    dot = vec_l[ 0 ]*target_vec_l[ 0 ] + vec_l[ 1 ]*target_vec_l[ 1 ]
+                    det = vec_l[ 0 ]*target_vec_l[ 1 ] - vec_l[ 1 ]*target_vec_l[ 0 ]
+                    theta_correction = np.arctan2(det, dot)
+                calibration_done = True
+
+            c, s = np.cos(theta_correction), np.sin(theta_correction)
+            vec_l_corr = np.array([
+                vec_l[ 0 ]*c - vec_l[ 1 ]*s,
+                vec_l[ 0 ]*s + vec_l[ 1 ]*c
+            ])
+            vx_l_corr, vy_l_corr = vec_l_corr[ 0 ], vec_l_corr[ 1 ]
+
+            angle_final = calculate_angle(vec_l_corr, vec_r)
+            
+            # On stocke l'angle avec son numéro d'image
+            results_table.append((frame_count, angle_final))
+
+            # Calage sur le bord supérieur
+            x_l = np.mean(good_new_l[:, 0])
+            x_r = np.mean(good_new_r[:, 0])
+
+            if abs(vx_l) > 1e-6:
+                m_l = vy_l / vx_l
+                c_left = good_new_l[:, 1] - m_l * good_new_l[:, 0]
+                y_top_l = m_l * x_l + np.percentile(c_left, 2)
+            else:
+                y_top_l = np.percentile(good_new_l[:, 1], 2)
+
+            if abs(vx_r) > 1e-6:
+                m_r = vy_r / vx_r
+                c_right = good_new_r[:, 1] - m_r * good_new_r[:, 0]
+                y_top_r = m_r * x_r + np.percentile(c_right, 2)
+            else:
+                y_top_r = np.percentile(good_new_r[:, 1], 2)
+            
+            # Dessin
+            pt1_g = (int(x_l - vx_l_corr*1000), int(y_top_l - vy_l_corr*1000))
+            pt2_g = (int(x_l + vx_l_corr*1000), int(y_top_l + vy_l_corr*1000))
+            cv2.line(frame, pt1_g, pt2_g, (0, 255, 0), 2)
+            
+            pt1_d = (int(x_r - vx_r*1000), int(y_top_r - vy_r*1000))
+            pt2_d = (int(x_r + vx_r*1000), int(y_top_r + vy_r*1000))
+            cv2.line(frame, pt1_d, pt2_d, (0, 0, 255), 2)
+            
+            texte = f"Angle: {angle_final:.2f} deg"
+            cv2.putText(frame, texte, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 3)
+
+        # Affichage en direct du résultat de l'algorithme
+        cv2.imshow("Analyse Pliage En Direct", frame)
+        video_out.write(frame)
+
+        p_current_left = good_new_l.reshape(-1, 1, 2)
+        p_current_right = good_new_r.reshape(-1, 1, 2)
+        gray_prev = gray_curr.copy()
+
+        # Si l'utilisateur appuie sur 'q', on sort de la boucle infinie
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("\nEssai arrêté par l'utilisateur.")
+            break
+
+    # Nettoyage et libération de la caméra
+    cap.release()
+    video_out.release()
+    cv2.destroyAllWindows()
+
+    # =============================================================================
+    # 3. ANALYSE FINALE ET RÉSULTATS
+    # =============================================================================
+    angles_valides = [row[ 1 ] for row in results_table]
+    
+    if len(angles_valides) > 0:
+        angle_min = min(angles_valides)
+        angle_final_reel = angles_valides[-1]
+        springback = angle_final_reel - angle_min
+        
+        print("\n=== BILAN MÉCANIQUE DU PLIAGE ===")
+        print(f"Angle Min (Sous charge) : {angle_min:.2f} °")
+        print(f"Angle Final (Au repos)  : {angle_final_reel:.2f} °")
+        print(f"RETOUR ÉLASTIQUE        : + {springback:.2f} °")
+        print("=================================\n")
+
+        plt.figure(figsize=(10, 6))
+        frames = [row[ 0 ] for row in results_table]
+        plt.plot(frames, angles_valides, '-o', color='b', markersize=3)
+        
+        index_min = frames[angles_valides.index(angle_min)]
+        plt.plot(index_min, angle_min, 'ro', markersize=8, label=f'Min: {angle_min:.2f}°')
+        plt.plot(frames[-1], angle_final_reel, 'go', markersize=8, label=f'Final: {angle_final_reel:.2f}°')
+        
+        plt.annotate(f"Springback:\n+{springback:.2f}°", 
+                     xy=(frames[-1], angle_final_reel), 
+                     xytext=(frames[-1]- (len(frames)*0.1), angle_final_reel+3),
+                     arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=5))
+
+        plt.title("Cinématique en Temps Réel et Retour Élastique", fontsize=14)
+        plt.xlabel("Image lue par la caméra (Temps)", fontsize=12)
+        plt.ylabel("Angle mesuré (°)", fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+        
+        plt.savefig("Live_Courbe_Evolution2.png", dpi=300, bbox_inches='tight')
+        plt.show()
+
+# LANCEZ LE CODE ICI
+# Le paramètre 0 indique la webcam par défaut de votre ordinateur
+# Remplacez par 1 ou 2 si vous avez branché une autre caméra USB externe
+main_dic_webcam(0)
