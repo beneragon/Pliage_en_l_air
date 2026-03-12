@@ -43,6 +43,10 @@ Sur la première image, l'utilisateur doit sélectionner deux zones :
 - une zone sur l'aile gauche de la tôle,
 - une zone sur l'aile droite.
 
+Voici un exemple de calibration de la zone d'intérêt pour l'aile gauche d'une tôle : 
+
+![Calibration zone aile gauche tôle](images/zone_interet.png)
+
 Ces zones sont appelées ROI (Region Of Interest).
 
 Elles doivent être placées sur des zones rigides de la tôle, et non sur la zone du pli, afin de mesurer correctement la rotation des deux parties. Cette sélection est réalisée grâce à la fonction `cv2.selectROI()`.
