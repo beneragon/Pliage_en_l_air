@@ -67,6 +67,10 @@ Le prince de mesure mis en place dans ce projet est le suivant :
 7. Identification de l'angle minimal sous charge et l'angle final après relâchement du poinçon.
 8. Calcul du retour élastique.
 
+Pendant l'analyse des images, le programme place deux segments sur chaque aile de la tôle afin de mesurer l'angle de pliage à un instant t, par exemple :
+
+![Exemple de mesure par analyse d'image](images/exo542MU3_101931_102_6282097311750_resultat.png)
+
 ## Architecture du projet
 
 Le projet se décompose en deux parties principales.
@@ -96,4 +100,8 @@ A partir des images du pliage, le programme permet d'obtenir automatiquement :
 - l'angle final après deéchargement,
 - la valeur du retour élastique (springback).
 
-Les résultats sont présentés sous forme d'une vidéo du suivi du pliage, et d'un graphique montrant l'évolution de l'angle.
+Les résultats sont présentés sous forme d'une vidéo du suivi du pliage, et d'un graphique montrant l'évolution de l'angle, par exemple :
+
+![Graphe final d'un essai en temps réel](images/Live_Courbe_Evolution2.png)
+
+Ici, le graphe obtenu correspond à un essai réalisé sur un test en temps réel du pliage d'une tôle à 120°.
