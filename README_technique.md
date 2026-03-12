@@ -153,3 +153,18 @@ A la fin du programme, plusieurs fichiers sont créés automatiquement :
 ```
 00_Courbe_Evolution_Pliage.png
 ```
+
+## Analyse en temps réel
+
+Un second script est également disponible : `script en temps réel`. Celui-ci permet de réaliser l'analyse du pliage en temps réel en utilisant directement un flux vidéo provenant d'une caméra, plutôt qu'un dossier d'images déjà acquises.
+
+Le principe de fonctionnement reste globalement le même que pour le programme décrit ci-dessus :
+- sélection des zones d'analyse (ROI),
+- détection de points de texture,
+- suivi des points au cours du temps,
+- calcul de l'orientation des ailes,
+- mesure de l'angle de pliage et du retour élastique.
+
+La principale différence est que les images ne sont plus lues depuis un dossier, mais capturées en continu depuis la caméra, ce qui permet d'analyser le pliage pendant l'essai.  
+
+L'utilisation de ce second script est donc très similaire au premier, et repose sur les mêmes principes d'analyse d'images décrits dans ce document.
