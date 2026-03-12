@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Mar  9 08:27:09 2026
-
-@author: benja
-"""
-
-# -*- coding: utf-8 -*-
-"""
 Analyse DIC Temps Réel (Webcam / Caméra)
 - Suivi du pliage en direct
 - Lignes robustes et calibration
@@ -17,6 +10,7 @@ import cv2
 import numpy as np
 import time
 import matplotlib.pyplot as plt
+import csv
 
 # =============================================================================
 # 1. FONCTION DE CALCUL D'ANGLE
@@ -119,7 +113,7 @@ def main_dic_webcam(camera_id=0):
     # Création du fichier vidéo de l'essai
     height, width = frame_ref.shape[:2]
     fourcc = cv2.VideoWriter_fourcc(*'avc1') 
-    video_out = cv2.VideoWriter("Essai_Pliage_Live2.mp4", fourcc, 30.0, (width, height))
+    video_out = cv2.VideoWriter("Essai_Pliage_Live.mp4", fourcc, 30.0, (width, height))
 
     print("\n--- ANALYSE EN DIRECT EN COURS ---")
     print(">>> Appuyez sur la touche 'q' pour arrêter l'essai et voir les résultats.")
@@ -234,6 +228,8 @@ def main_dic_webcam(camera_id=0):
     # =============================================================================
     # 3. ANALYSE FINALE ET RÉSULTATS
     # =============================================================================
+    
+    
     angles_valides = [row[ 1 ] for row in results_table]
     
     if len(angles_valides) > 0:
@@ -246,6 +242,30 @@ def main_dic_webcam(camera_id=0):
         print(f"Angle Final (Au repos)  : {angle_final_reel:.2f} °")
         print(f"RETOUR ÉLASTIQUE        : + {springback:.2f} °")
         print("=================================\n")
+
+        # SAUVEGARDE EN FICHIER CSV POUR EXCEL ---
+        nom_fichier_csv = "Essai_Pliage_Live_Angles.csv"
+        
+        with open(nom_fichier_csv, mode='w', newline='', encoding='utf-8') as fichier_csv:
+            writer = csv.writer(fichier_csv, delimiter=';')
+            # Création de la ligne d'en-tête
+            writer.writerow([0])
+            
+            for row in results_table:
+                frame_id = row[ 0 ]
+                angle = row[ 1 ]
+                
+                if not np.isnan(angle):
+                    # On remplace le point par une virgule pour qu'Excel le reconnaisse comme un nombre
+                    angle_str = f"{angle:.2f}".replace('.', ',')
+                else:
+                    angle_str = "Erreur"
+                    
+                writer.writerow([frame_id, angle_str])
+                
+        print(f"✅ Tableau de données exporté avec succès sous : {nom_fichier_csv}")
+        # -----------------------------------------------------------
+
 
         plt.figure(figsize=(10, 6))
         frames = [row[ 0 ] for row in results_table]
@@ -266,7 +286,7 @@ def main_dic_webcam(camera_id=0):
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.legend()
         
-        plt.savefig("Live_Courbe_Evolution2.png", dpi=300, bbox_inches='tight')
+        plt.savefig("Live_Courbe_Evolution.png", dpi=300, bbox_inches='tight')
         plt.show()
 
 # LANCEZ LE CODE ICI
