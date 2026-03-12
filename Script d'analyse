@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Analyse DIC pour mesure d'angle de pliage
-- Lignes robustes sur le bord supérieur absolu
+- Lignes robustes sur le bord supérieur de la plaque
 - Calibration à 180°
 - Calcul du Retour Élastique (Springback)
-- OPTIMISÉ POUR LA VITESSE (Génération vidéo AVI)
 """
 
 import cv2                  # OpenCV : La bibliothèque reine pour l'analyse d'images
@@ -14,6 +13,7 @@ import os                   # OS : Pour manipuler les chemins de fichiers Window
 import re                   # Regex : Pour découper et analyser le texte (utilisé pour le tri)
 import time                 # Time : Pour mesurer la vitesse d'exécution
 import matplotlib.pyplot as plt  # Matplotlib : Pour tracer le graphique final
+import csv                  # CSV : pour ouvrir les résultats sur Excel
 
 # =============================================================================
 # 1. FONCTIONS OUTILS (Les formules mathématiques)
@@ -91,7 +91,7 @@ def main_dic_analysis(image_folder):
     mask_left[int(r_left[ 1 ]):int(r_left[ 1 ]+r_left[ 3 ]), int(r_left[ 0 ]):int(r_left[ 0 ]+r_left[ 2 ])] = 255
     mask_right[int(r_right[ 1 ]):int(r_right[ 1 ]+r_right[ 3 ]), int(r_right[ 0 ]):int(r_right[ 0 ]+r_right[ 2 ])] = 255
 
-    feature_params = dict(maxCorners=500, qualityLevel=0.01, minDistance=5, blockSize=7)
+    feature_params = dict(maxCorners=200, qualityLevel=0.05, minDistance=10, blockSize=7)
     p0_left = cv2.goodFeaturesToTrack(gray_ref, mask=mask_left, **feature_params)
     p0_right = cv2.goodFeaturesToTrack(gray_ref, mask=mask_right, **feature_params)
 
@@ -199,7 +199,7 @@ def main_dic_analysis(image_folder):
             texte = f"Angle: {angle_final:.2f} deg"
             cv2.putText(frame, texte, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 0), 3)
             
-            # AU LIEU D'ENREGISTRER DES PNG, ON AJOUTE L'IMAGE A LA VIDEO DIRECTEMENT (Très rapide)
+            # AU LIEU D'ENREGISTRER DES PNG, ON AJOUTE L'IMAGE A LA VIDEO DIRECTEMENT (+ RAPIDE)
             video_out.write(frame)
 
             t_end_frame = time.time()
@@ -240,6 +240,36 @@ def main_dic_analysis(image_folder):
         # =========================================================================
         # 4. CRÉATION DU GRAPHIQUE
         # =========================================================================
+      
+        chemin_csv = os.path.join(image_folder, "00_Historique_Angles.csv")
+            
+        # On ouvre (ou crée) le fichier en mode écriture ('w')
+        with open(chemin_csv, mode='w', newline='', encoding='utf-8') as fichier_csv:
+            # Le délimiteur ';' est le standard pour que les colonnes se fassent toutes seules sur un Excel français
+            writer = csv.writer(fichier_csv, delimiter=';')
+                
+            # Écriture de la première ligne (les en-têtes de colonnes)
+            writer.writerow([0])
+                
+            # Boucle pour écrire chaque ligne de résultat
+            for row in results_table:
+                nom_image = row[ 0 ]
+                angle = row[ 1 ]
+                    
+                    # Formatage du nombre : on remplace le point par une virgule pour Excel
+                if not np.isnan(angle):
+                    angle_str = f"{angle:.2f}".replace('.', ',')
+                else:
+                    angle_str = "Erreur de suivi"
+                        
+                writer.writerow([nom_image, angle_str])
+                    
+        print(f"Tableau de données exporté avec succès sous : {chemin_csv}")
+      
+        
+      # =========================================================================
+        
+      
         numero_images = range(1, len(angles_valides) + 1)
         
         plt.figure(figsize=(10, 6))
@@ -264,5 +294,5 @@ def main_dic_analysis(image_folder):
         plt.savefig(chemin_graphique, dpi=300, bbox_inches='tight')
         plt.show()
 
-# LANCEZ LE CODE ICI
-main_dic_analysis(r'D:\DP600\-5mm\1')
+# LANCEZ LE CODE ICI EN INDIQUANT r'chemin_folder_images'
+main_dic_analysis(r'D:\DP800\-5mm\2')
